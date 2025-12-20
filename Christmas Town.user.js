@@ -26,6 +26,60 @@
     let cdForTypingGame;
     let cdForGarland;
     const chirp = new Audio("https://www.torn.com/js/chat/sounds/Chirp_1.mp3");
+    // Configure audio to play when window is in background
+    chirp.preload = "auto";
+    chirp.volume = 1.0;
+    chirp.crossOrigin = "anonymous";
+    
+    // Web Audio API setup for background playback
+    let audioContext = null;
+    let audioSource = null;
+    let audioBuffer = null;
+    
+    // Initialize Web Audio API
+    const initAudioContext = () => {
+        if (audioContext) return;
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) {
+                audioContext = new AudioContextClass();
+                // Load the audio file into a buffer for Web Audio API playback
+                fetch("https://www.torn.com/js/chat/sounds/Chirp_1.mp3")
+                    .then(response => response.arrayBuffer())
+                    .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+                    .then(buffer => {
+                        audioBuffer = buffer;
+                    })
+                    .catch(() => {
+                        audioBuffer = null;
+                    });
+            }
+        } catch (e) {
+            audioContext = null;
+        }
+    };
+    
+    // Play sound using Web Audio API (works in background)
+    const playChirpWithWebAudio = () => {
+        if (!audioContext || !audioBuffer) return false;
+        try {
+            // Resume context if suspended
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            // Create a new source for each play
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    };
+    
+    // Initialize audio context
+    initAudioContext();
     const options = { "checkbox": { "items": { "name": "Highlight Items", "def": "yes", "color": "#e4e461" }, "gold_chest": { "name": "Highlight Golden Chests", "def": "yes", "color": "#e4e461" }, "silver_chest": { "name": "Highlight Silver Chests", "def": "yes", "color": "#e4e461" }, "bronze_chest": { "name": "Highlight Bronze Chests", "def": "yes", "color": "#e4e461" }, "combo_chest": { "name": "Highlight Combination Chests", "def": "yes", "color": "#e4e461" }, "chest_keys": { "name": "Highlight Keys", "def": "yes", "color": "#e4e461" }, "highlight_santa": { "name": "Highlight Santa", "def": "yes", "color": "#ff6200" }, "highlight_npc": { "name": "Highlight Other NPCs", "def": "yes", "color": "#ff6200" }, "wreath": { "name": "Christmas Wreath Helper", "def": "yes" }, "snowball_shooter": { "name": "Snowball Shooter Helper", "def": "yes" }, "santa_clawz": { "name": "Santa Clawz Helper", "def": "yes" }, "word_fixer": { "name": "Word Fixer Helper", "def": "yes" }, "hangman": { "name": "Hangman Helper", "def": "yes" }, "typoGame": { "name": "Typocalypse Helper", "def": "yes" }, "garland": { "name": "Garland Assemble Helper", "def": "yes" }, "chirp_alert_ct": { "name": "Chirp Alert", "def": "no" } }, "api_ct": "" };
 
     const wordList = ["holly and ivy", "elf", "eve", "fir", "ham", "icy", "ivy", "joy", "pie", "toy", "gift", "gold", "list", "love", "nice", "sled", "star", "wish", "wrap", "xmas", "yule", "angel", "bells", "cider", "elves", "goose", "holly", "jesus", "merry", "myrrh", "party", "skate", "visit", "candle", "creche", "cookie", "eggnog", "family", "frosty", "icicle", "joyful", "manger", "season", "spirit", "tinsel", "turkey", "unwrap", "wonder", "winter", "wreath", "charity", "chimney", "festive", "holiday", "krampus", "mittens", "naughty", "package", "pageant", "rejoice", "rudolph", "scrooge", "snowman", "sweater", "tidings", "firewood", "nativity", "reindeer", "shopping", "snowball", "stocking", "toboggan", "trimming", "vacation", "wise men", "workshop", "yuletide", "chestnuts", "christmas", "fruitcake", "greetings", "mince pie", "mistletoe", "ornaments", "snowflake", "tradition", "candy cane", "decoration", "ice skates", "jack frost", "north pole", "nutcracker", "saint nick", "yule log", "card", "jolly", "hope", "scarf", "candy", "sleigh", "parade", "snowy", "wassail", "blizzard", "noel", "partridge", "give", "carols", "tree", "fireplace", "socks", "lights", "kings", "goodwill", "sugarplum", "bonus", "coal", "snow", "happy", "presents", "pinecone"];
@@ -34,13 +88,25 @@
         "state": "Inactive",
         "html": "",
         "start": function () {
-            if (!document.querySelector(".ctHelperGameBox")) {
+            const existingBox = document.querySelector(".ctHelperGameBox");
+            if (!existingBox) {
                 const node = document.createElement("div");
                 node.className = "ctHelperGameBox";
                 const reference = document.querySelector(".ct-wrap");
                 reference.parentNode.insertBefore(node, reference);
             }
-            document.querySelector(".ctHelperGameBox").innerHTML = `<div class="hardyCTHeader">${this.state} Helper</div><div class="hardyGameBoxContent"></div>`;
+            // Only update header if it doesn't match current state (to avoid unnecessary DOM manipulation)
+            const box = document.querySelector(".ctHelperGameBox");
+            const header = box.querySelector(".hardyCTHeader");
+            const content = box.querySelector(".hardyGameBoxContent");
+            if (!header || header.textContent !== `${this.state} Helper`) {
+                box.innerHTML = `<div class="hardyCTHeader">${this.state} Helper</div><div class="hardyGameBoxContent"></div>`;
+            } else if (!content) {
+                // If header exists but content div doesn't, add it
+                const contentDiv = document.createElement("div");
+                contentDiv.className = "hardyGameBoxContent";
+                box.appendChild(contentDiv);
+            }
         },
         "fixWord": function () {
             if (metadata.settings.games.wordFix) {
@@ -86,8 +152,10 @@
                 try {
                     clearInterval(cdForTypingGame);
                 } catch (error) {
-                    console.log(`CT Helper: ${error}`);
+                    // Error clearing interval
                 }
+            } else if (this.state === "Combo Chest") {
+                this.comboChestStop();
             }
             this.state = "Inactive";
             this.html = "";
@@ -217,6 +285,215 @@
                     gameHelper.update();
                 });
 
+        },
+        "comboChestStart": function () {
+            if (!metadata.cache.comboChest) {
+                metadata.cache.comboChest = {
+                    attempts: [],
+                    possibleCombinations: [],
+                    eliminated: new Set()
+                };
+            }
+            
+            // Check if combo chest helper box already exists to avoid page shake
+            const existingBox = document.querySelector(".ctHelperGameBox");
+            const isAlreadyComboChest = this.state === "Combo Chest" && existingBox;
+            
+            this.state = "Combo Chest";
+            
+            // Only recreate the box if it doesn't exist or if it's for a different game
+            if (!existingBox || !isAlreadyComboChest) {
+                this.start();
+            }
+            
+            this.updateComboChestUI();
+            
+            // Start monitoring for combo chest UI (only if not already running)
+            if (!this.comboChestMonitor) {
+                this.comboChestMonitor = setInterval(() => {
+                    this.checkComboChestUI();
+                }, 500);
+            }
+        },
+        "checkComboChestUI": function () {
+            // Check if combo chest UI is visible in the DOM
+            // Look for various possible selectors for combo chest UI
+            const comboUI = document.querySelector('[class*="CombinationChest"], [class*="combination"], [id*="combination"], [id*="combo"], [class*="chest"][class*="modal"], [class*="chest"][class*="dialog"]');
+            
+            // Also check for input fields that might be combo chest inputs
+            const comboInputs = document.querySelectorAll('input[type="number"][max="9"], input[pattern*="[0-9]"], [class*="digit"][class*="input"]');
+            
+            // If we find combo chest UI or inputs, always ensure the helper is active
+            if ((comboUI || comboInputs.length >= 3) && this.state !== "Combo Chest") {
+                this.comboChestStart();
+            }
+            
+            // If helper is active, try to extract data
+            if (this.state === "Combo Chest") {
+                this.extractComboChestData();
+            }
+        },
+        "extractComboChestData": function () {
+            // Look for input fields or displayed numbers in the combo chest UI
+            const inputs = Array.from(document.querySelectorAll('input[type="number"], input[pattern*="[0-9]"], [class*="digit"], [class*="number"]')).filter(inp => {
+                const val = parseInt(inp.value);
+                return !isNaN(val) && val >= 1 && val <= 9;
+            });
+            
+            // Try to extract current combination from inputs
+            if (inputs.length >= 3) {
+                const combo = inputs.slice(0, 3).map(inp => parseInt(inp.value)).filter(v => !isNaN(v));
+                if (combo.length === 3) {
+                    // Look for feedback indicators near these inputs
+                    let feedback = null;
+                    
+                    // Check parent elements for feedback classes
+                    inputs.forEach((inp, idx) => {
+                        let element = inp.parentElement;
+                        for (let i = 0; i < 3 && element; i++) {
+                            const classes = element.className || '';
+                            const style = element.style?.backgroundColor || element.style?.color || '';
+                            if (classes.includes('green') || style.includes('green') || style.includes('#4caf50')) {
+                                feedback = idx === 2 ? 'green' : (feedback || 'yellow');
+                            } else if (classes.includes('yellow') || style.includes('yellow') || style.includes('#ffc107')) {
+                                feedback = feedback || 'yellow';
+                            } else if (classes.includes('red') || style.includes('red') || style.includes('#f44336')) {
+                                if (!feedback) feedback = 'red';
+                            }
+                            element = element.parentElement;
+                        }
+                    });
+                    
+                    // If we have a new combination, check if it's already recorded
+                    const cache = metadata.cache.comboChest;
+                    if (cache && cache.attempts.length > 0) {
+                        const lastAttempt = cache.attempts[cache.attempts.length - 1];
+                        const lastCombo = lastAttempt.combo.join('');
+                        const currentCombo = combo.join('');
+                        
+                        // Only record if it's different from the last attempt
+                        if (lastCombo !== currentCombo) {
+                            // Small delay to allow feedback to update
+                            setTimeout(() => {
+                                this.recordComboAttempt(combo, feedback);
+                            }, 300);
+                        }
+                    }
+                }
+            }
+            
+            // Update UI periodically
+            this.updateComboChestUI();
+        },
+        "updateComboChestUI": function () {
+            const cache = metadata.cache.comboChest || { attempts: [], possibleCombinations: [], eliminated: new Set() };
+            const totalAttempts = cache.attempts.length;
+            const remainingCombos = cache.possibleCombinations.length;
+            
+            let html = `<div style="padding: 8px;">
+                <p style="font-size: 12px; margin: 4px 0; color: #666;">Attempts: ${totalAttempts}</p>`;
+            
+            if (cache.attempts.length > 0) {
+                html += `<div style="max-height: 120px; overflow-y: auto; margin: 8px 0; padding: 4px; background: #f5f5f5; border-radius: 4px;">`;
+                cache.attempts.slice(-5).forEach((attempt, idx) => {
+                    const color = attempt.feedback === 'green' ? '#4caf50' : attempt.feedback === 'yellow' ? '#ffc107' : '#f44336';
+                    html += `<div style="font-size: 11px; margin: 2px 0; padding: 2px 4px; border-left: 3px solid ${color};">
+                        ${attempt.combo.join('')} - ${attempt.feedback || 'pending'}
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+            
+            if (remainingCombos > 0) {
+                html += `<p style="font-size: 11px; margin: 4px 0; color: #2196f3;">Possible: ${remainingCombos} combinations</p>`;
+                html += `<div style="max-height: 80px; overflow-y: auto; font-size: 10px; color: #666; margin-top: 4px;">`;
+                cache.possibleCombinations.slice(0, 10).forEach(combo => {
+                    html += `<span style="display: inline-block; margin: 2px; padding: 2px 6px; background: #e3f2fd; border-radius: 3px;">${combo.join('')}</span>`;
+                });
+                if (remainingCombos > 10) {
+                    html += `<span style="color: #999;">... and ${remainingCombos - 10} more</span>`;
+                }
+                html += `</div>`;
+            } else if (totalAttempts === 0) {
+                html += `<p style="font-size: 11px; color: #999; margin: 8px 0;">Start trying combinations to see suggestions</p>`;
+            }
+            
+            html += `</div>`;
+            this.html = html;
+            this.update();
+        },
+        "recordComboAttempt": function (combo, feedback) {
+            if (!metadata.cache.comboChest) {
+                metadata.cache.comboChest = {
+                    attempts: [],
+                    possibleCombinations: [],
+                    eliminated: new Set()
+                };
+            }
+            const cache = metadata.cache.comboChest;
+            
+            // Record attempt
+            const attempt = {
+                combo: Array.isArray(combo) ? combo : combo.toString().split(''),
+                feedback: feedback || 'unknown',
+                timestamp: Date.now()
+            };
+            cache.attempts.push(attempt);
+            
+            // Update possible combinations based on feedback
+            this.updatePossibleCombinations(attempt);
+            
+            // Update UI
+            this.updateComboChestUI();
+        },
+        "updatePossibleCombinations": function (attempt) {
+            const cache = metadata.cache.comboChest;
+            const combo = attempt.combo;
+            const feedback = attempt.feedback;
+            
+            // Generate all possible 3-digit combinations if this is the first attempt
+            if (cache.possibleCombinations.length === 0) {
+                for (let i = 1; i <= 9; i++) {
+                    for (let j = 1; j <= 9; j++) {
+                        for (let k = 1; k <= 9; k++) {
+                            cache.possibleCombinations.push([i, j, k]);
+                        }
+                    }
+                }
+            }
+            
+            // Filter based on feedback
+            if (feedback === 'red') {
+                // All digits are wrong - eliminate all combinations containing any of these digits
+                cache.possibleCombinations = cache.possibleCombinations.filter(c => 
+                    !c.includes(parseInt(combo[0])) && 
+                    !c.includes(parseInt(combo[1])) && 
+                    !c.includes(parseInt(combo[2]))
+                );
+            } else if (feedback === 'yellow') {
+                // Digits are correct but in wrong positions
+                // Keep combinations that have all three digits but NOT in the same positions
+                cache.possibleCombinations = cache.possibleCombinations.filter(c => {
+                    const comboInts = combo.map(d => parseInt(d));
+                    // Must contain all three digits
+                    const hasAllDigits = comboInts.every(d => c.includes(d));
+                    // But NOT in the same positions (at least one must be in wrong position)
+                    const allSamePosition = comboInts.every((d, idx) => c[idx] === d);
+                    return hasAllDigits && !allSamePosition;
+                });
+            } else if (feedback === 'green') {
+                // All correct - this should be the solution
+                cache.possibleCombinations = [combo.map(d => parseInt(d))];
+            }
+        },
+        "comboChestStop": function () {
+            if (this.comboChestMonitor) {
+                clearInterval(this.comboChestMonitor);
+                this.comboChestMonitor = null;
+            }
+            if (metadata.cache.comboChest) {
+                metadata.cache.comboChest = null;
+            }
         }
 
 
@@ -236,7 +513,27 @@
                 const now = Math.round(Date.now() / 1000);
                 const diff = now - last_chirp;
                 if (diff >= 60) {
-                    chirp.play();
+                    // Try Web Audio API first (works better in background)
+                    let played = false;
+                    try {
+                        played = playChirpWithWebAudio();
+                    } catch (e) {
+                        played = false;
+                    }
+                    
+                    // Fallback to regular audio if Web Audio didn't work
+                    if (!played) {
+                        try {
+                            chirp.currentTime = 0;
+                            const playPromise = chirp.play();
+                            if (playPromise !== undefined) {
+                                playPromise.catch(() => {});
+                            }
+                        } catch (e) {
+                            // Fallback failed
+                        }
+                    }
+                    
                     chirp_sound.setLast();
                 }
             }
@@ -249,8 +546,10 @@
         const response_ = await original_fetch(url, init)
         const response = response_.clone();
         response.json().then((data) => {
+
             if (url.includes("christmas_town.php?q=move") || url.includes("christmas_town.php?q=initMap")) {
-                if (gameHelper.state !== "Inactive") {
+                // Don't stop combo chest helper on move - it should stay open
+                if (gameHelper.state !== "Inactive" && gameHelper.state !== "Combo Chest") {
                     gameHelper.stop();
                 }
                 if (data.mapData) {
@@ -264,6 +563,14 @@
                                 const { image, position } = item;
                                 const info = ctHelperGetInfo(image.url);
                                 if (["chests", "combo_chest"].includes(info.type)) {
+                                    if (info.type === "combo_chest") {
+                                        // Always start combo chest cracker UI when combo chest is detected
+                                        if (gameHelper.state !== "Combo Chest") {
+                                            setTimeout(() => {
+                                                gameHelper.comboChestStart();
+                                            }, 500);
+                                        }
+                                    }
                                     chestArray.push([info.name, position.x, position.y, info.index]);
                                 } else {
                                     itemArray.push([info.name, position.x, position.y]);
@@ -421,7 +728,91 @@
                     }
                 }
             } else if (url.includes("q=openChest")) {
+                // Parse request body safely
+                let parsedBody = null;
+                try {
+                    if (init?.body) {
+                        parsedBody = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+                    }
+                } catch (e) {
+                    // Failed to parse request body
+                }
+
+                // Check if this is a combo chest using the helper function
+                const isComboChest = isComboChestRequest(url, parsedBody, data);
+
+                // Handle combo chest cracking
+                if (isComboChest) {
+                    // Start combo chest cracker UI if not already active
+                    if (gameHelper.state !== "Combo Chest") {
+                        gameHelper.comboChestStart();
+                    }
+                    
+                    // Extract combination from request body
+                    let combo = null;
+                    if (parsedBody) {
+                        // Try different possible field names for the combination
+                        combo = parsedBody.combination || parsedBody.combo || parsedBody.digits || 
+                                parsedBody.code || parsedBody.input || parsedBody.values;
+                        
+                        // If it's an array or string, normalize it
+                        if (combo) {
+                            if (typeof combo === 'string') {
+                                combo = combo.split('').map(d => parseInt(d)).filter(d => !isNaN(d));
+                            } else if (Array.isArray(combo)) {
+                                combo = combo.map(d => parseInt(d)).filter(d => !isNaN(d));
+                            }
+                        }
+                    }
+                    
+                    // Extract feedback from response
+                    let feedback = null;
+                    if (data) {
+                        // Check for explicit feedback fields
+                        if (data.feedback) {
+                            feedback = data.feedback.toLowerCase();
+                        } else if (data.result) {
+                            feedback = data.result.toLowerCase();
+                        } else if (data.status) {
+                            // Infer from status
+                            if (data.status === "success" && data.prizes) {
+                                feedback = "green"; // Successfully opened
+                            } else if (data.message) {
+                                const msg = data.message.toLowerCase();
+                                if (msg.includes("wrong") || msg.includes("incorrect") || msg.includes("try again")) {
+                                    // Try to determine if it's red or yellow based on message
+                                    if (msg.includes("all wrong") || msg.includes("none correct")) {
+                                        feedback = "red";
+                                    } else if (msg.includes("correct") && (msg.includes("position") || msg.includes("wrong place"))) {
+                                        feedback = "yellow";
+                                    } else {
+                                        feedback = "red"; // Default to red for wrong attempts
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Check response data for color indicators
+                        if (!feedback && data.colors) {
+                            const colors = Array.isArray(data.colors) ? data.colors : [data.colors];
+                            if (colors.every(c => c === 'green' || c === '#4caf50' || c === 'rgb(76, 175, 80)')) {
+                                feedback = "green";
+                            } else if (colors.some(c => c === 'yellow' || c === '#ffc107' || c === 'rgb(255, 193, 7)')) {
+                                feedback = "yellow";
+                            } else if (colors.every(c => c === 'red' || c === '#f44336' || c === 'rgb(244, 67, 54)')) {
+                                feedback = "red";
+                            }
+                        }
+                    }
+                    
+                    // Record the attempt if we have a combination
+                    if (combo && combo.length === 3) {
+                        gameHelper.recordComboAttempt(combo, feedback || "unknown");
+                    }
+                }
+
                 if (data.status && data.status === "success" && data.prizes && data.prizes.length > 0) {
+                    // Keep combo chest helper open even after successful open
                     const savedData = getRecordedPrizes();
                     for (const prize of data.prizes) {
                         if (prize.category === "tornItems") {
@@ -436,10 +827,64 @@
                     setRecordPrizes(savedData);
                 }
             }
-        }).catch(err => console.log(err));
+        }).catch(err => {});
         return response_;
     }
     ///////////////////functions/////////////////////
+    /**
+     * Detects if a combo chest is being opened based on URL, request body, or response data
+     * @param {string} url - The request URL
+     * @param {Object|null} requestBody - The parsed request body
+     * @param {Object|null} responseData - The response data
+     * @returns {boolean} True if this is a combo chest
+     */
+    function isComboChestRequest(url, requestBody, responseData) {
+        // Check URL
+        if (url && (url.includes('combinationChest') || url.includes('combo'))) {
+            return true;
+        }
+        
+        // Check request body
+        if (requestBody) {
+            const bodyStr = JSON.stringify(requestBody).toLowerCase();
+            if (bodyStr.includes('combinationchest') || bodyStr.includes('combo')) {
+                return true;
+            }
+            
+            // Check for chest type/ID in body
+            if (requestBody.chestType === 'combinationChest' || 
+                requestBody.type === 'combinationChest' ||
+                requestBody.chestId === 'combinationChest' ||
+                requestBody.chest?.type === 'combinationChest') {
+                return true;
+            }
+        }
+        
+        // Check response data
+        if (responseData) {
+            const dataStr = JSON.stringify(responseData).toLowerCase();
+            if (dataStr.includes('combinationchest') || dataStr.includes('combo')) {
+                return true;
+            }
+            
+            // Check for image URLs in response (like in mapData)
+            if (responseData.chest && responseData.chest.image && responseData.chest.image.url) {
+                if (responseData.chest.image.url.includes('/combinationChest/')) {
+                    return true;
+                }
+            }
+            
+            // Check for chest type in response
+            if (responseData.chestType === 'combinationChest' || 
+                responseData.type === 'combinationChest' ||
+                responseData.chest?.type === 'combinationChest') {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
     function ctHelperGetInfo(link) {
         let type = "items";
         const categories = ["/keys/", "/chests/", "/combinationChest/"];
@@ -488,6 +933,45 @@
             gamesHelper_css();
             getItemInfoFromSheet()
             //pruneOldFinds();
+            
+            // Enable audio on user interaction (required for background playback)
+            const enableAudio = () => {
+                // Resume Web Audio API context if suspended
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                // Initialize audio context if not already done
+                if (!audioContext) {
+                    initAudioContext();
+                }
+                // Pre-load and play a silent sound to unlock audio
+                try {
+                    chirp.volume = 0.01;
+                    const playPromise = chirp.play();
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            chirp.pause();
+                            chirp.currentTime = 0;
+                            chirp.volume = 1.0;
+                        }).catch(() => {
+                            chirp.volume = 1.0;
+                        });
+                    }
+                } catch (e) {
+                    // Ignore errors
+                }
+            };
+            
+            // Enable audio on first user interaction
+            document.addEventListener('click', enableAudio, { once: true });
+            document.addEventListener('keydown', enableAudio, { once: true });
+            
+            // Start global monitor for combo chest UI
+            setInterval(() => {
+                if (gameHelper.state !== "Combo Chest") {
+                    gameHelper.checkComboChestUI();
+                }
+            }, 1000);
         }
     }
     function updateModifierText() {
@@ -508,7 +992,7 @@
                 metadata.settings.spawn = 1;
                 metadata.settings.speed = 1;
             }).catch(error => {
-                console.log(error);
+                // Error initializing box
             });
         }
         let pageUrl = window.location.href;
@@ -738,7 +1222,6 @@
                 const color = options.checkbox[checkbox].color;
                 html += `<label>${info}: </label>${color ? `<input type="color" name="color_${checkbox}" value="${saved.color[`color_${checkbox}`]}">` : ''}<input type="checkbox" name="${checkbox}" ${preferenceHandler("checkbox", checkbox, options.checkbox[checkbox].def, "")}><br>`;
             }
-            console.log(saved);
             //html += `<br><p>Miscellaneous</p><label>API Key(Public): </label><input type="text" name="api_ct" value="${saved.misc.api_ct}"><br>`;
             html += `<button class="hardy-save-prefs">Save</button> <button class="hardy-ct-itemstable">Items Table</button>`;
             box.querySelector(".hardy_modal_content").innerHTML = html;
@@ -1729,7 +2212,6 @@ body.dark-mode .ctRecordLink { color: #4ba3ff; }
             const currentCombination = {};
 
             if (!this.#findSolution(keys, 0, currentCombination)) {
-                console.log("No solution found.");
                 return null;
             } else {
                 return this.#tempGrid;
