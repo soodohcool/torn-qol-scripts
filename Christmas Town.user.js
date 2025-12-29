@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Christmas Town Helper
 // @namespace    hardy.ct.helper
-// @version      3.0.7
+// @version      3.0.8
 // @description  Christmas Town Helper. Highlights Items, Chests, NPCs. And Games Cheat
 // @author       Hardy [2131687]
 // @match        https://www.torn.com/christmas_town.php*
@@ -19,12 +19,126 @@
 (function () {
     'use strict';
 
-    const version = "3.0.7";
+    const version = "3.0.8";
     const waitObj = {};
     const metadata = { "cache": { "spawn_rate": 0, "speed_rate": 0, "hangman": { "list": [], "chars": [], "len": false } }, "settings": { "games": { "wordFix": false } } };
     let saved;
     let cdForTypingGame;
     let cdForGarland;
+    
+    // AFK Mode tracking
+    let afkMode = false;
+    let afkCollectedItems = {};
+    
+    const afkHelper = {
+        toggle: function() {
+            if (afkMode) {
+                // Turning off - show modal with collected items
+                this.showResultsModal();
+            }
+            afkMode = !afkMode;
+            this.updateButton();
+        },
+        updateButton: function() {
+            const btn = document.querySelector(".ctAfkButton");
+            if (btn) {
+                btn.classList.toggle("afk-active", afkMode);
+                btn.title = afkMode ? "AFK Mode: ON - Click to stop and view items" : "AFK Mode: OFF - Click to start tracking";
+            }
+            this.updateCount();
+        },
+        updateCount: function() {
+            const chip = document.querySelector(".afkCountChip");
+            if (chip) {
+                const total = Object.values(afkCollectedItems).reduce((sum, qty) => sum + qty, 0);
+                chip.textContent = total;
+            }
+        },
+        recordItem: function(itemId, quantity = 1) {
+            if (!afkMode) return;
+            if (afkCollectedItems[itemId]) {
+                afkCollectedItems[itemId] += quantity;
+            } else {
+                afkCollectedItems[itemId] = quantity;
+            }
+            this.updateCount();
+        },
+        showResultsModal: function() {
+            // Get item metadata for names
+            const itemMetadata = GM_getValue("item_metadata", { items: {} });
+            const items = itemMetadata.items || {};
+            
+            // Build table rows
+            let tableRows = '';
+            let totalItems = 0;
+            const sortedItems = Object.entries(afkCollectedItems).sort((a, b) => b[1] - a[1]);
+            
+            for (const [itemId, qty] of sortedItems) {
+                const itemInfo = items[itemId] || { name: `Item #${itemId}`, value: 0 };
+                const itemName = itemInfo.name || `Item #${itemId}`;
+                const itemValue = itemInfo.value || 0;
+                const totalValue = itemValue * qty;
+                tableRows += `<tr>
+                    <td><img src="https://www.torn.com/images/items/${itemId}/small.png" width="20" height="20" loading="lazy"> ${itemName}</td>
+                    <td style="text-align:center">${qty}</td>
+                    <td style="text-align:right">$${totalValue.toLocaleString()}</td>
+                </tr>`;
+                totalItems += qty;
+            }
+            
+            if (tableRows === '') {
+                tableRows = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#666;">No items collected during this AFK session</td></tr>';
+            }
+            
+            // Create modal
+            const modal = document.createElement("div");
+            modal.className = "afkResultsModal";
+            modal.innerHTML = `
+                <div class="afkModalContent">
+                    <div class="afkModalHeader">
+                        <strong>AFK Session Results</strong>
+                        <button class="afkModalClose">&times;</button>
+                    </div>
+                    <div class="afkModalBody">
+                        <p class="afkSummary">Total items collected: <strong>${totalItems}</strong></p>
+                        <div class="afkTableWrapper">
+                            <table class="afkItemsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th style="text-align:center">Qty</th>
+                                        <th style="text-align:right">Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="afkModalFooter">
+                        <button class="afkModalBtn afkClearBtn">Clear & Close</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Event listeners
+            modal.querySelector(".afkModalClose").addEventListener("click", () => {
+                modal.remove();
+            });
+            modal.querySelector(".afkClearBtn").addEventListener("click", () => {
+                afkCollectedItems = {};
+                this.updateCount();
+                modal.remove();
+            });
+            modal.addEventListener("click", (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+    };
+    
     const chirp = new Audio("https://www.torn.com/js/chat/sounds/Chirp_1.mp3");
     // Configure audio to play when window is in background
     chirp.preload = "auto";
@@ -80,7 +194,7 @@
     
     // Initialize audio context
     initAudioContext();
-    const options = { "checkbox": { "items": { "name": "Highlight Items", "def": "yes", "color": "#e4e461" }, "gold_chest": { "name": "Highlight Golden Chests", "def": "yes", "color": "#e4e461" }, "silver_chest": { "name": "Highlight Silver Chests", "def": "yes", "color": "#e4e461" }, "bronze_chest": { "name": "Highlight Bronze Chests", "def": "yes", "color": "#e4e461" }, "combo_chest": { "name": "Highlight Combination Chests", "def": "yes", "color": "#e4e461" }, "chest_keys": { "name": "Highlight Keys", "def": "yes", "color": "#e4e461" }, "highlight_santa": { "name": "Highlight Santa", "def": "yes", "color": "#ff6200" }, "highlight_npc": { "name": "Highlight Other NPCs", "def": "yes", "color": "#ff6200" }, "wreath": { "name": "Christmas Wreath Helper", "def": "yes" }, "snowball_shooter": { "name": "Snowball Shooter Helper", "def": "yes" }, "santa_clawz": { "name": "Santa Clawz Helper", "def": "yes" }, "word_fixer": { "name": "Word Fixer Helper", "def": "yes" }, "hangman": { "name": "Hangman Helper", "def": "yes" }, "typoGame": { "name": "Typocalypse Helper", "def": "yes" }, "garland": { "name": "Garland Assemble Helper", "def": "yes" }, "chirp_alert_ct": { "name": "Chirp Alert", "def": "no" } }, "api_ct": "" };
+    const options = { "checkbox": { "items": { "name": "Highlight Items", "def": "yes", "color": "#e4e461" }, "gold_chest": { "name": "Highlight Golden Chests", "def": "yes", "color": "#e4e461" }, "silver_chest": { "name": "Highlight Silver Chests", "def": "yes", "color": "#e4e461" }, "bronze_chest": { "name": "Highlight Bronze Chests", "def": "yes", "color": "#e4e461" }, "combo_chest": { "name": "Highlight Combination Chests", "def": "yes", "color": "#e4e461" }, "chest_keys": { "name": "Highlight Keys", "def": "yes", "color": "#e4e461" }, "highlight_santa": { "name": "Highlight Santa", "def": "yes", "color": "#ff6200" }, "highlight_npc": { "name": "Highlight Other NPCs", "def": "yes", "color": "#ff6200" }, "wreath": { "name": "Christmas Wreath Helper", "def": "yes" }, "snowball_shooter": { "name": "Snowball Shooter Helper", "def": "yes" }, "santa_clawz": { "name": "Santa Clawz Helper", "def": "yes" }, "word_fixer": { "name": "Word Fixer Helper", "def": "yes" }, "hangman": { "name": "Hangman Helper", "def": "yes" }, "combo_cracker": { "name": "Combo Cracker Helper", "def": "yes" }, "typoGame": { "name": "Typocalypse Helper", "def": "yes" }, "garland": { "name": "Garland Assemble Helper", "def": "yes" }, "chirp_alert_ct": { "name": "Chirp Alert", "def": "no" } }, "api_ct": "" };
 
     const wordList = ["holly and ivy", "elf", "eve", "fir", "ham", "icy", "ivy", "joy", "pie", "toy", "gift", "gold", "list", "love", "nice", "sled", "star", "wish", "wrap", "xmas", "yule", "angel", "bells", "cider", "elves", "goose", "holly", "jesus", "merry", "myrrh", "party", "skate", "visit", "candle", "creche", "cookie", "eggnog", "family", "frosty", "icicle", "joyful", "manger", "season", "spirit", "tinsel", "turkey", "unwrap", "wonder", "winter", "wreath", "charity", "chimney", "festive", "holiday", "krampus", "mittens", "naughty", "package", "pageant", "rejoice", "rudolph", "scrooge", "snowman", "sweater", "tidings", "firewood", "nativity", "reindeer", "shopping", "snowball", "stocking", "toboggan", "trimming", "vacation", "wise men", "workshop", "yuletide", "chestnuts", "christmas", "fruitcake", "greetings", "mince pie", "mistletoe", "ornaments", "snowflake", "tradition", "candy cane", "decoration", "ice skates", "jack frost", "north pole", "nutcracker", "saint nick", "yule log", "card", "jolly", "hope", "scarf", "candy", "sleigh", "parade", "snowy", "wassail", "blizzard", "noel", "partridge", "give", "carols", "tree", "fireplace", "socks", "lights", "kings", "goodwill", "sugarplum", "bonus", "coal", "snow", "happy", "presents", "pinecone"];
     const original_fetch = unsafeWindow.fetch;
@@ -90,9 +204,10 @@
         "start": function () {
             const existingBox = document.querySelector(".ctHelperGameBox");
             if (!existingBox) {
+                const reference = document.querySelector(".ct-wrap");
+                if (!reference) return; // Exit if .ct-wrap doesn't exist yet
                 const node = document.createElement("div");
                 node.className = "ctHelperGameBox";
-                const reference = document.querySelector(".ct-wrap");
                 reference.parentNode.insertBefore(node, reference);
             }
             // Only update header if it doesn't match current state (to avoid unnecessary DOM manipulation)
@@ -316,21 +431,29 @@
             }
         },
         "checkComboChestUI": function () {
-            // Check if combo chest UI is visible in the DOM
-            // Look for various possible selectors for combo chest UI
-            const comboUI = document.querySelector('[class*="CombinationChest"], [class*="combination"], [id*="combination"], [id*="combo"], [class*="chest"][class*="modal"], [class*="chest"][class*="dialog"]');
+            // Only run when state is Inactive or already Combo Chest
+            // Don't interfere with other active helpers like Hangman, Word Fixer, etc.
+            if (this.state !== "Inactive" && this.state !== "Combo Chest") {
+                return;
+            }
             
-            // Also check for input fields that might be combo chest inputs
-            const comboInputs = document.querySelectorAll('input[type="number"][max="9"], input[pattern*="[0-9]"], [class*="digit"][class*="input"]');
+            // Look for the actual combo chest modal/popup UI that appears when user clicks on combo chest
+            const comboModal = document.querySelector('[class*="CombinationChest"], [class*="combination-chest"], [class*="comboChest"]');
             
-            // If we find combo chest UI or inputs, always ensure the helper is active
-            if ((comboUI || comboInputs.length >= 3) && this.state !== "Combo Chest") {
+            // If we find the specific combo chest UI modal and we're inactive, start the helper
+            if (comboModal && this.state === "Inactive" && saved.checkbox.combo_cracker === "yes") {
                 this.comboChestStart();
             }
             
-            // If helper is active, try to extract data
+            // If already in combo chest mode, check if the combo UI is still visible
             if (this.state === "Combo Chest") {
-                this.extractComboChestData();
+                const stillVisible = document.querySelector('[class*="CombinationChest"], [class*="combination-chest"], [class*="comboChest"]');
+                if (!stillVisible) {
+                    this.comboChestStop();
+                    this.stop();
+                } else {
+                    this.extractComboChestData();
+                }
             }
         },
         "extractComboChestData": function () {
@@ -390,35 +513,43 @@
             const totalAttempts = cache.attempts.length;
             const remainingCombos = cache.possibleCombinations.length;
             
-            let html = `<div style="padding: 8px;">
-                <p style="font-size: 12px; margin: 4px 0; color: #666;">Attempts: ${totalAttempts}</p>`;
+            // Use same structure as nearby-items-chests
+            let html = `<div class="nearby-items-chests">`;
             
+            // Attempts section (left box)
+            html += `<div class="hardyNearbyItems">`;
+            html += `<label>Attempts(${totalAttempts})</label>`;
+            html += `<div class="content">`;
             if (cache.attempts.length > 0) {
-                html += `<div style="max-height: 120px; overflow-y: auto; margin: 8px 0; padding: 4px; background: #f5f5f5; border-radius: 4px;">`;
-                cache.attempts.slice(-5).forEach((attempt, idx) => {
-                    const color = attempt.feedback === 'green' ? '#4caf50' : attempt.feedback === 'yellow' ? '#ffc107' : '#f44336';
-                    html += `<div style="font-size: 11px; margin: 2px 0; padding: 2px 4px; border-left: 3px solid ${color};">
-                        ${attempt.combo.join('')} - ${attempt.feedback || 'pending'}
-                    </div>`;
+                cache.attempts.slice(-5).forEach((attempt) => {
+                    const feedbackText = attempt.feedback === 'green' ? '✓' : attempt.feedback === 'yellow' ? '~' : '✗';
+                    html += `<p>${attempt.combo.join('')} ${feedbackText}</p>`;
                 });
-                html += `</div>`;
+            } else {
+                html += `<p>No attempts yet</p>`;
             }
+            html += `</div></div>`;
             
+            // Suggestions section (right box)
+            html += `<div class="hardyNearbyChests">`;
+            html += `<label>Suggestions(${remainingCombos})</label>`;
+            html += `<div class="content">`;
             if (remainingCombos > 0) {
-                html += `<p style="font-size: 11px; margin: 4px 0; color: #2196f3;">Possible: ${remainingCombos} combinations</p>`;
-                html += `<div style="max-height: 80px; overflow-y: auto; font-size: 10px; color: #666; margin-top: 4px;">`;
-                cache.possibleCombinations.slice(0, 10).forEach(combo => {
-                    html += `<span style="display: inline-block; margin: 2px; padding: 2px 6px; background: #e3f2fd; border-radius: 3px;">${combo.join('')}</span>`;
+                cache.possibleCombinations.slice(0, 8).forEach(combo => {
+                    html += `<p>${combo.join('')}</p>`;
                 });
-                if (remainingCombos > 10) {
-                    html += `<span style="color: #999;">... and ${remainingCombos - 10} more</span>`;
+                if (remainingCombos > 8) {
+                    html += `<p>+${remainingCombos - 8} more...</p>`;
                 }
-                html += `</div>`;
             } else if (totalAttempts === 0) {
-                html += `<p style="font-size: 11px; color: #999; margin: 8px 0;">Start trying combinations to see suggestions</p>`;
+                html += `<p>Try a combo to start</p>`;
+            } else {
+                html += `<p>No matches</p>`;
             }
+            html += `</div></div>`;
             
             html += `</div>`;
+            
             this.html = html;
             this.update();
         },
@@ -563,14 +694,6 @@
                                 const { image, position } = item;
                                 const info = ctHelperGetInfo(image.url);
                                 if (["chests", "combo_chest"].includes(info.type)) {
-                                    if (info.type === "combo_chest") {
-                                        // Always start combo chest cracker UI when combo chest is detected
-                                        if (gameHelper.state !== "Combo Chest") {
-                                            setTimeout(() => {
-                                                gameHelper.comboChestStart();
-                                            }, 500);
-                                        }
-                                    }
                                     chestArray.push([info.name, position.x, position.y, info.index]);
                                 } else {
                                     itemArray.push([info.name, position.x, position.y]);
@@ -617,6 +740,8 @@
                                     savedData.items[itemId] = 1;
                                 }
                                 setRecordPrizes(savedData);
+                                // Track for AFK mode
+                                afkHelper.recordItem(itemId);
                             }
                         }
                     }
@@ -630,6 +755,8 @@
                                 } else {
                                     savedData.items[itemId] = 1;
                                 }
+                                // Track for AFK mode
+                                afkHelper.recordItem(itemId);
                             }
                         }
                         setRecordPrizes(savedData);
@@ -742,7 +869,7 @@
                 const isComboChest = isComboChestRequest(url, parsedBody, data);
 
                 // Handle combo chest cracking
-                if (isComboChest) {
+                if (isComboChest && saved.checkbox.combo_cracker === "yes") {
                     // Start combo chest cracker UI if not already active
                     if (gameHelper.state !== "Combo Chest") {
                         gameHelper.comboChestStart();
@@ -839,47 +966,60 @@
      * @returns {boolean} True if this is a combo chest
      */
     function isComboChestRequest(url, requestBody, responseData) {
-        // Check URL
-        if (url && (url.includes('combinationChest') || url.includes('combo'))) {
-            return true;
-        }
-        
-        // Check request body
-        if (requestBody) {
-            const bodyStr = JSON.stringify(requestBody).toLowerCase();
-            if (bodyStr.includes('combinationchest') || bodyStr.includes('combo')) {
+        try {
+            // Check URL
+            if (url && (url.includes('combinationChest') || url.includes('combo'))) {
                 return true;
             }
             
-            // Check for chest type/ID in body
-            if (requestBody.chestType === 'combinationChest' || 
-                requestBody.type === 'combinationChest' ||
-                requestBody.chestId === 'combinationChest' ||
-                requestBody.chest?.type === 'combinationChest') {
-                return true;
-            }
-        }
-        
-        // Check response data
-        if (responseData) {
-            const dataStr = JSON.stringify(responseData).toLowerCase();
-            if (dataStr.includes('combinationchest') || dataStr.includes('combo')) {
-                return true;
-            }
-            
-            // Check for image URLs in response (like in mapData)
-            if (responseData.chest && responseData.chest.image && responseData.chest.image.url) {
-                if (responseData.chest.image.url.includes('/combinationChest/')) {
-                    return true;
+            // Check request body
+            if (requestBody) {
+                try {
+                    const bodyStr = JSON.stringify(requestBody).toLowerCase();
+                    if (bodyStr.includes('combinationchest')) {
+                        return true;
+                    }
+                    
+                    // Check for chest type/ID in body
+                    if (requestBody.chestType === 'combinationChest' || 
+                        requestBody.type === 'combinationChest' ||
+                        requestBody.chestId === 'combinationChest' ||
+                        requestBody.chest?.type === 'combinationChest') {
+                        return true;
+                    }
+                } catch (e) {
+                    // Ignore JSON stringify errors
                 }
             }
             
-            // Check for chest type in response
-            if (responseData.chestType === 'combinationChest' || 
-                responseData.type === 'combinationChest' ||
-                responseData.chest?.type === 'combinationChest') {
-                return true;
+            // Check response data
+            if (responseData) {
+                try {
+                    const dataStr = JSON.stringify(responseData).toLowerCase();
+                    if (dataStr.includes('combinationchest')) {
+                        return true;
+                    }
+                    
+                    // Check for image URLs in response (like in mapData)
+                    if (responseData.chest && responseData.chest.image && responseData.chest.image.url) {
+                        if (responseData.chest.image.url.includes('/combinationChest/')) {
+                            return true;
+                        }
+                    }
+                    
+                    // Check for chest type in response
+                    if (responseData.chestType === 'combinationChest' || 
+                        responseData.type === 'combinationChest' ||
+                        responseData.chest?.type === 'combinationChest') {
+                        return true;
+                    }
+                } catch (e) {
+                    // Ignore errors
+                }
             }
+        } catch (e) {
+            // Safety catch - return false if anything goes wrong
+            return false;
         }
         
         return false;
@@ -966,9 +1106,9 @@
             document.addEventListener('click', enableAudio, { once: true });
             document.addEventListener('keydown', enableAudio, { once: true });
             
-            // Start global monitor for combo chest UI
+            // Start global monitor for combo chest UI (only when inactive)
             setInterval(() => {
-                if (gameHelper.state !== "Combo Chest") {
+                if (gameHelper.state === "Inactive") {
                     gameHelper.checkComboChestUI();
                 }
             }, 1000);
@@ -984,8 +1124,11 @@
         if (!document.querySelector(".hardyCTBox")) {
             waitForElement("#christmastownroot div[class^='appCTContainer']", 900, 999, "dhjdvefvasvduqwdufdevshacqweu").then((element) => {
                 const newBox = createElement("div", { 'class': 'hardyCTBox' });
-                newBox.innerHTML = `<div class="hardyCTHeader">Christmas Town Helper</div> <div class="hardyCTContent"> <div style="display: flex; align-items: center; justify-content: space-between;"> <div style="flex-grow: 1; text-align: center;"> <p class="ctHelperSpawnRate ctHelperSuccess">&nbsp;</p> <p class="ctHelperSpeedRate ctHelperSuccess">&nbsp;</p> </div> <button class="ctRecordLink"> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16"> <path fill="currentColor" d="M8 6a2 2 0 1 0 0 4a2 2 0 0 0 0-4ZM7 8a1 1 0 1 1 2 0a1 1 0 0 1-2 0Zm3.618-3.602a.708.708 0 0 1-.824-.567l-.26-1.416a.354.354 0 0 0-.275-.282a6.072 6.072 0 0 0-2.519 0a.354.354 0 0 0-.275.282l-.259 1.416a.71.71 0 0 1-.936.538l-1.359-.484a.355.355 0 0 0-.382.095a5.99 5.99 0 0 0-1.262 2.173a.352.352 0 0 0 .108.378l1.102.931a.704.704 0 0 1 0 1.076l-1.102.931a.352.352 0 0 0-.108.378A5.986 5.986 0 0 0 3.53 12.02a.355.355 0 0 0 .382.095l1.36-.484a.708.708 0 0 1 .936.538l.258 1.416c.026.14.135.252.275.281a6.075 6.075 0 0 0 2.52 0a.353.353 0 0 0 .274-.281l.26-1.416a.71.71 0 0 1 .936-.538l1.359.484c.135.048.286.01.382-.095a5.99 5.99 0 0 0 1.262-2.173a.352.352 0 0 0-.108-.378l-1.102-.931a.703.703 0 0 1 0-1.076l1.102-.931a.352.352 0 0 0 .108-.378A5.985 5.985 0 0 0 12.47 3.98a.355.355 0 0 0-.382-.095l-1.36.484a.71.71 0 0 1-.111.03Zm-6.62.58l.937.333a1.71 1.71 0 0 0 2.255-1.3l.177-.97a5.105 5.105 0 0 1 1.265 0l.178.97a1.708 1.708 0 0 0 2.255 1.3L12 4.977c.255.334.467.698.63 1.084l-.754.637a1.704 1.704 0 0 0 0 2.604l.755.637a4.99 4.99 0 0 1-.63 1.084l-.937-.334a1.71 1.71 0 0 0-2.255 1.3l-.178.97a5.099 5.099 0 0 1-1.265 0l-.177-.97a1.708 1.708 0 0 0-2.255-1.3L4 11.023a4.987 4.987 0 0 1-.63-1.084l.754-.638a1.704 1.704 0 0 0 0-2.603l-.755-.637a5.06 5.06 0 0 1 .63-1.084Z"></path> </svg> </button> </div> <div class="nearby-items-chests"> <div class="hardyNearbyItems"> <label>Nearby Items(0)</label> <div class="content"></div> </div> <div class="hardyNearbyChests"> <label>Nearby Chests(0)</label> <div class="content"></div> </div> </div> </div>`;
+                newBox.innerHTML = `<div class="hardyCTHeader">Christmas Town Helper</div> <div class="hardyCTContent"> <div style="position: relative;"> <div><p class="ctHelperSpawnRate ctHelperSuccess" style="display: block; margin: 0;">&nbsp;</p> <p class="ctHelperSpeedRate ctHelperSuccess" style="display: block; margin: 0;">&nbsp;</p></div> <div style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; gap: 5px; align-items: center;"> <button class="ctAfkButton" title="AFK Mode: OFF - Click to start tracking">AFK<span class="afkCountChip">0</span></button> <button class="ctRecordLink"> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16"> <path fill="currentColor" d="M8 6a2 2 0 1 0 0 4a2 2 0 0 0 0-4ZM7 8a1 1 0 1 1 2 0a1 1 0 0 1-2 0Zm3.618-3.602a.708.708 0 0 1-.824-.567l-.26-1.416a.354.354 0 0 0-.275-.282a6.072 6.072 0 0 0-2.519 0a.354.354 0 0 0-.275.282l-.259 1.416a.71.71 0 0 1-.936.538l-1.359-.484a.355.355 0 0 0-.382.095a5.99 5.99 0 0 0-1.262 2.173a.352.352 0 0 0 .108.378l1.102.931a.704.704 0 0 1 0 1.076l-1.102.931a.352.352 0 0 0-.108.378A5.986 5.986 0 0 0 3.53 12.02a.355.355 0 0 0 .382.095l1.36-.484a.708.708 0 0 1 .936.538l.258 1.416c.026.14.135.252.275.281a6.075 6.075 0 0 0 2.52 0a.353.353 0 0 0 .274-.281l.26-1.416a.71.71 0 0 1 .936-.538l1.359.484c.135.048.286.01.382-.095a5.99 5.99 0 0 0 1.262-2.173a.352.352 0 0 0-.108-.378l-1.102-.931a.703.703 0 0 1 0-1.076l1.102-.931a.352.352 0 0 0 .108-.378A5.985 5.985 0 0 0 12.47 3.98a.355.355 0 0 0-.382-.095l-1.36.484a.71.71 0 0 1-.111.03Zm-6.62.58l.937.333a1.71 1.71 0 0 0 2.255-1.3l.177-.97a5.105 5.105 0 0 1 1.265 0l.178.97a1.708 1.708 0 0 0 2.255 1.3L12 4.977c.255.334.467.698.63 1.084l-.754.637a1.704 1.704 0 0 0 0 2.604l.755.637a4.99 4.99 0 0 1-.63 1.084l-.937-.334a1.71 1.71 0 0 0-2.255 1.3l-.178.97a5.099 5.099 0 0 1-1.265 0l-.177-.97a1.708 1.708 0 0 0-2.255-1.3L4 11.023a4.987 4.987 0 0 1-.63-1.084l.754-.638a1.704 1.704 0 0 0 0-2.603l-.755-.637a5.06 5.06 0 0 1 .63-1.084Z"></path> </svg> </button> </div> </div> <div class="nearby-items-chests"> <div class="hardyNearbyItems"> <label>Nearby Items(0)</label> <div class="content"></div> </div> <div class="hardyNearbyChests"> <label>Nearby Chests(0)</label> <div class="content"></div> </div> </div> </div>`;
                 element.insertBefore(newBox, element.firstChild.nextSibling);
+                newBox.querySelector(".ctAfkButton").addEventListener("click", () => {
+                    afkHelper.toggle();
+                });
                 newBox.querySelector(".ctRecordLink").addEventListener("click", (event) => {
                     createPreferencesBox('#hardy_pref_box_q-links');
                 })
@@ -1564,9 +1707,10 @@
     if (innerWidth <= 600) {
         // General
         GM_addStyle(`.ct-user-wrap .user-map:before { display: none; }
-.hardyGameBoxContent { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 0 0 10px 10px; max-height: 150px; margin-bottom: 5px; padding: 10px; }
+.ctHelperGameBox { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 10px; max-height: 250px; margin-bottom: 10px; }
+.hardyGameBoxContent { padding: 10px; font-size: 1.2em; }
 .helcostrDoesntLikeGreenCommas { color: black; }
-.hardyCTBox { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 10px; max-height: 250px; }
+.hardyCTBox { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 10px; max-height: 250px; margin-bottom: 10px; }
 .hardyCTHeader { background-color: #200505; color: #f2f2f2; padding: 6px; font-size: 1.5em; font-weight: bold; text-align: center; border-radius: 10px 10px 0 0; }
 .hardyCTContent { padding: 10px; font-size: 1.2em; }
 .ctRecordLink { color: #121212; border: none; padding: 8px; cursor: pointer; }
@@ -1577,17 +1721,16 @@
 .hardyNearbyItems label, .hardyNearbyChests label { display: block; text-align: center; font-weight: bold; font-size: 1.1em; }
 .hardyNearbyItems .content, .hardyNearbyChests .content { padding: 10px; border-radius: 5px; text-align: left; font-size: 0.7em; line-height: 1.1; overflow-y: auto; max-height: 80px; }
 .ctHelperSuccess { color: green; font-weight: bold; }
-.hardyCTContent > div:first-child { display: flex; align-items: center; justify-content: space-between; }
-.hardyCTContent > div:first-child > div { text-align: center; flex-grow: 1; }
+.hardyCTContent > div:first-child { display: flex; align-items: center; }
+.hardyCTContent > div:first-child > div { flex-grow: 1; }
 
 body.dark-mode .hardyCTHeader { background-color: #191919; }
-body.dark-mode .hardyCTBox { background-color: #333; border: 1px solid #444; }
-body.dark-mode .hardyCTContent { color: #ddd; }
+body.dark-mode .hardyCTBox, body.dark-mode .ctHelperGameBox { background-color: #333; border: 1px solid #444; }
+body.dark-mode .hardyCTContent, body.dark-mode .hardyGameBoxContent { color: #ddd; }
 body.dark-mode .ctRecordLink { color: #f0f0f0; }
 body.dark-mode .helcostrDoesntLikeGreenCommas { color: white; }
 body.dark-mode .hardyNearbyItems, body.dark-mode .hardyNearbyChests { background-color: #2c2c2c; border: 1px solid #555; color: #ddd; }
 body.dark-mode .ctHelperSuccess { color: lightgreen; }
-body.dark-mode .hardyGameBoxContent { background-color: #333; }
 .hardyCTTypoAnswer { padding: 5px 6px; background-color: #4a9f33; color: white; margin: 5px; border-radius: 5px; }
 .hardyCTTypoAnswer:hover, .hardyCTTypoAnswer:focus { color: white; }`);
         //Dialog
@@ -1612,9 +1755,10 @@ body.dark-mode .hardy_modal_msg { color: white; }
     } else {
         // General
         GM_addStyle(`.ct-user-wrap .user-map:before { display: none; }
-.hardyGameBoxContent { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 0 0 10px 10px; max-height: 150px; margin-bottom: 5px; padding: 10px; }
+.ctHelperGameBox { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 10px; max-height: 250px; margin-bottom: 10px; }
+.hardyGameBoxContent { padding: 10px; font-size: 1.2em; }
 .helcostrDoesntLikeGreenCommas { color: black; }
-.hardyCTBox { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 10px; max-height: 250px; }
+.hardyCTBox { background-color: #f2f2f2; border: 1px solid #ccc; border-radius: 10px; max-height: 250px; margin-bottom: 10px; }
 .hardyCTHeader { background-color: #200505; color: #f2f2f2; padding: 6px; font-size: 1.5em; font-weight: bold; text-align: center; border-radius: 10px 10px 0 0; }
 .hardyCTContent { padding: 10px; font-size: 1.2em; }
 .ctRecordLink { color: #121212; border: none; padding: 8px; cursor: pointer; }
@@ -1625,17 +1769,16 @@ body.dark-mode .hardy_modal_msg { color: white; }
 .hardyNearbyItems label, .hardyNearbyChests label { display: block; text-align: center; font-weight: bold; font-size: 1.1em; }
 .hardyNearbyItems .content, .hardyNearbyChests .content { padding: 10px; border-radius: 5px; text-align: left; font-size: 0.9em; line-height: 1.3; overflow-y: auto; max-height: 80px; }
 .ctHelperSuccess { color: green; font-weight: bold; }
-.hardyCTContent > div:first-child { display: flex; align-items: center; justify-content: space-between; }
-.hardyCTContent > div:first-child > div { text-align: center; flex-grow: 1; }
+.hardyCTContent > div:first-child { display: flex; align-items: center; }
+.hardyCTContent > div:first-child > div { flex-grow: 1; }
 
 body.dark-mode .hardyCTHeader { background-color: #191919; }
-body.dark-mode .hardyCTBox { background-color: #333; border: 1px solid #444; }
-body.dark-mode .hardyCTContent { color: #ddd; }
+body.dark-mode .hardyCTBox, body.dark-mode .ctHelperGameBox { background-color: #333; border: 1px solid #444; }
+body.dark-mode .hardyCTContent, body.dark-mode .hardyGameBoxContent { color: #ddd; }
 body.dark-mode .ctRecordLink { color: #f0f0f0; }
 body.dark-mode .helcostrDoesntLikeGreenCommas { color: white; }
 body.dark-mode .hardyNearbyItems, body.dark-mode .hardyNearbyChests { background-color: #2c2c2c; border: 1px solid #555; color: #ddd; }
 body.dark-mode .ctHelperSuccess { color: lightgreen; }
-body.dark-mode .hardyGameBoxContent { background-color: #333; }
 .hardyCTTypoAnswer { padding: 5px 6px; background-color: #4a9f33; color: white; margin: 5px; border-radius: 5px; }
 .hardyCTTypoAnswer:hover, .hardyCTTypoAnswer:focus { color: white; }`);
         //Dialog
@@ -1696,6 +1839,36 @@ body.dark-mode .hardyCTtextBox { background-color: #2a1d1d; border: 1px solid #a
 .ctRecordLink { display: inline-block; margin: 10px 0; text-decoration: none; color: #007bff; font-weight: bold; }
 body.dark-mode .ctRecordLink { color: #4ba3ff; }
 .ctRecordLink:hover { text-decoration: underline; }`);
+
+    // AFK Mode CSS
+    GM_addStyle(`
+.ctAfkButton { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; background: #a33; color: #fff; font-size: 11px; font-weight: 600; transition: all 0.2s ease; margin-right: 5px; }
+.ctAfkButton:hover { background: #b44; }
+.ctAfkButton.afk-active { background: #3a5a3a; }
+.ctAfkButton.afk-active:hover { background: #4a6a4a; }
+.afkCountChip { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #fff; color: #333; font-size: 10px; font-weight: 600; }
+
+.afkResultsModal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10300; display: flex; align-items: center; justify-content: center; }
+.afkModalContent { background: #2a2a2a; border-radius: 8px; max-width: 450px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5); color: #ccc; }
+.afkModalHeader { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #1a1a1a; border-radius: 8px 8px 0 0; }
+.afkModalHeader h3 { margin: 0; font-size: 15px; font-weight: 600; color: #ddd; }
+.afkModalClose { background: none; border: none; font-size: 18px; cursor: pointer; color: #666; line-height: 1; padding: 0; }
+.afkModalClose:hover { color: #999; }
+.afkModalBody { padding: 16px; overflow-y: auto; flex: 1; }
+.afkSummary { margin: 0 0 12px; font-size: 13px; color: #888; }
+.afkSummary strong { color: #6c6; }
+.afkTableWrapper { max-height: 280px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; }
+.afkItemsTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.afkItemsTable th { background: #333; color: #aaa; padding: 8px 10px; text-align: left; position: sticky; top: 0; font-weight: 500; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+.afkItemsTable td { padding: 8px 10px; border-bottom: 1px solid #333; vertical-align: middle; color: #bbb; }
+.afkItemsTable tr:hover td { background: #353535; }
+.afkItemsTable td img { vertical-align: middle; margin-right: 5px; }
+.afkModalFooter { padding: 12px 16px; border-top: 1px solid #333; display: flex; justify-content: flex-end; }
+.afkModalBtn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+.afkModalBtn:hover { opacity: 0.85; }
+.afkClearBtn { background: #444; color: #ccc; }
+.afkClearBtn:hover { background: #555; }
+`);
 
     ////////
 
